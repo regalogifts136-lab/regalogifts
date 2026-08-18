@@ -506,8 +506,20 @@ function subOrder(e){
     e.preventDefault();let name=document.getElementById('xName').value,phone=document.getElementById('xPhone').value,addr=document.getElementById('xAddr').value,notes=document.getElementById('xNotes').value;
     if(!name||!phone||!addr)return toast(t('tFillReq'),'er');
     let total=0;D.cart.forEach(c=>total+=c.price*c.q);
-    D.orders.unshift({id:Date.now(),date:new Date().toLocaleString('ar-EG'),name,phone,addr,notes,items:D.cart.map(c=>({name:c.name,q:c.q,price:c.price})),total,status:'جديد'});
+    let orderData = {id:Date.now(),date:new Date().toLocaleString('ar-EG'),name,phone,addr,notes,items:D.cart.map(c=>({name:c.name,q:c.q,price:c.price})),total,status:'جديد'};
+    
+    D.orders.unshift(orderData);
     saveD();D.cart=[];saveD();renderCart();clCK();document.getElementById('ckForm').reset();toast(t('tOrdOK'),'ok');
+    
+    // إرسال للشيت
+    if(D.gsUrl){
+        fetch(D.gsUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: 'order', name: name, phone: phone, address: addr, items: JSON.stringify(orderData.items), total: total, notes: notes})
+        }).catch(err => console.log("Sheet Error", err));
+    }
 }
 
 function sr(id){document.getElementById(id).scrollIntoView({behavior:'smooth'});}
