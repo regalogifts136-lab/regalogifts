@@ -392,8 +392,29 @@ function loadD(){let s=localStorage.getItem('regaloData');if(s)D=JSON.parse(s);}
 function saveD(){localStorage.setItem('regaloData',JSON.stringify(D));}
 function t(k){return T[D.lang][k]||k;}
 
-function init(){
+async function init(){
     loadD();
+    
+    // جلب البيانات من الشيت إذا كان اللينك موجود
+    if(D.gsUrl){
+        try {
+            let r = await fetch(D.gsUrl);
+            if(r.ok){
+                let s = await r.json();
+                if(s && (s.hero || s.prods)){
+                    if(s.hero) D.hero = s.hero;
+                    if(s.prods) D.prods = s.prods;
+                    if(s.soc) D.soc = s.soc;
+                    if(s.set) D.set = s.set;
+                    if(s.lang) D.lang = s.lang;
+                    if(s.theme) D.theme = s.theme;
+                    if(s.pw) D.pw = s.pw;
+                    saveD();
+                }
+            }
+        } catch(e){}
+    }
+
     setLang(D.lang,true);
     applyTheme(D.theme,true);
     renderHero();
