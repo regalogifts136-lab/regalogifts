@@ -349,20 +349,30 @@
 <div style="font-weight:600;font-size:.82rem;margin-bottom:8px;">كود Apps Script للشيت:</div>
 <pre style="font-size:.68rem;color:var(--fg-light);line-height:1.7;direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:var(--fg);color:#E8D5C0;padding:12px;border-radius:8px;overflow-x:auto;">function doGet(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
+  if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('Data');
   var data = sheet.getRange('A1').getValue();
   return ContentService.createTextOutput(data || '{}').setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
-  var d = JSON.parse(e.postData.contents);
-  if (d.type === 'order') {
-    var os = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Orders');
-    os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes]);
-  } else if (d.type === 'data') {
-    var ds = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
-    ds.getRange('A1').setValue(JSON.stringify(d.payload));
+  try {
+    var d = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    if (d.type === 'order') {
+      var os = ss.getSheetByName('Orders') || ss.insertSheet('Orders');
+      if(os.getLastRow() === 0){
+        os.appendRow(["التاريخ", "الاسم", "رقم الهاتف", "العنوان", "المنتجات", "الإجمالي", "ملاحظات"]);
+      }
+      os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes]);
+    } else if (d.type === 'data') {
+      var ds = ss.getSheetByName('Data') || ss.insertSheet('Data');
+      ds.getRange('A1').setValue(JSON.stringify(d.payload));
+    }
+    return ContentService.createTextOutput(JSON.stringify({status:'success'})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({status:'error', message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
   }
-  return ContentService.createTextOutput(JSON.stringify({status:'success'})).setMimeType(ContentService.MimeType.JSON);
 }</pre>
 <button onclick="navigator.clipboard.writeText(document.querySelector('#tc-set pre').textContent).then(function(){toast(t('tCopied'),'ok')})" style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:.78rem;color:var(--fg);"><i class="fas fa-copy"></i> نسخ</button>
 </div>
@@ -537,8 +547,8 @@ function subOrder(e){
         fetch(D.gsUrl, {
             method: 'POST',
             mode: 'no-cors',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
+            headers: {'Content-Type': 'text/plain;charset=utf-8'},
+            body: JSON.stringify(payload)
         }).catch(err => console.log("Sheet Error", err));
     }
 }
@@ -588,8 +598,8 @@ function syncToSheet(){
     fetch(D.gsUrl, {
         method:'POST',
         mode: 'no-cors',
-        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(payload)
     }).catch(()=>{});
 }
 
