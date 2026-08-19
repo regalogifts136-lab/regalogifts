@@ -266,6 +266,14 @@
 <div class="fg"><label class="fl" data-t="fPhone">رقم الهاتف</label><input type="tel" class="fi" id="xPhone" data-p="fPhonePh" required></div>
 <div class="fg"><label class="fl" data-t="fAddr">العنوان</label><input type="text" class="fi" id="xAddr" data-p="fAddrPh" required></div>
 <div class="fg"><label class="fl" data-t="fNotes">ملاحظات</label><textarea class="fi" id="xNotes" data-p="fNotesPh" rows="3"></textarea></div>
+<div class="fg">
+    <label class="fl">صور التخصيص (اختياري - حتى 10 صور)</label>
+    <input type="file" id="customImgs" accept="image/*" multiple style="display:none;" onchange="handleImageUpload(this)">
+    <button type="button" class="bsec" style="width:100%;padding:11px;" onclick="document.getElementById('customImgs').click()">
+        <i class="fas fa-images"></i> <span id="imgBtnText">رفع الصور</span>
+    </button>
+    <p id="imgCount" style="font-size:.75rem;color:var(--muted);margin-top:6px;text-align:center;"></p>
+</div>
 <div style="background:var(--bg);border-radius:14px;padding:16px;margin-bottom:18px;"><div style="font-weight:600;font-size:.85rem;margin-bottom:10px;" data-t="ordSum">ملخص الطلب:</div><div id="ordSum" style="font-size:.82rem;color:var(--fg-light);line-height:2;"></div><div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:700;"><span data-t="cartTotal">الإجمالي</span><span id="ordTot" style="color:var(--accent-dark);"></span></div></div>
 <button type="submit" class="fub" id="subBtn"><i class="fas fa-check-circle"></i><span data-t="confirmOrd">تأكيد الطلب</span></button>
 </form></div></div>
@@ -346,7 +354,7 @@
 <div class="fg"><input type="url" class="fi" id="gsQuick" placeholder="Web App URL" dir="ltr"></div>
 <button class="fub gb" style="margin-bottom:12px;" onclick="qSaveGS()"><i class="fas fa-link"></i> <span data-t="saveGS">حفظ الربط</span></button>
 <div style="background:var(--bg);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
-<div style="font-weight:600;font-size:.82rem;margin-bottom:8px;">كود Apps Script للشيت:</div>
+<div style="font-weight:600;font-size:.82rem;margin-bottom:8px;">كود Apps Script للشيت (النسخة المطورة برفع الصور):</div>
 <pre style="font-size:.68rem;color:var(--fg-light);line-height:1.7;direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:var(--fg);color:#E8D5C0;padding:12px;border-radius:8px;overflow-x:auto;">function doGet(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
   if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('Data');
@@ -355,16 +363,33 @@
 }
 
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
+    lock.tryLock(30000);
     var d = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
     if (d.type === 'order') {
       var os = ss.getSheetByName('Orders') || ss.insertSheet('Orders');
       if(os.getLastRow() === 0){
-        os.appendRow(["التاريخ", "الاسم", "رقم الهاتف", "العنوان", "المنتجات", "الإجمالي", "ملاحظات"]);
+        os.appendRow(["التاريخ", "الاسم", "رقم الهاتف", "العنوان", "المنتجات", "الإجمالي", "ملاحظات", "رابط الصور"]);
       }
-      os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes]);
+      
+      var imageLinks = [];
+      if (d.images && d.images.length > 0) {
+        var parentFolder = DriveApp.getFileById(ss.getId()).getParentFolders().next();
+        for (var i = 0; i < d.images.length; i++) {
+          var base64Data = d.images[i].split(',')[1];
+          var decoded = Utilities.base64Decode(base64Data);
+          var blob = Utilities.newBlob(decoded, 'image/jpeg', 'Order_' + Date.now() + '_' + i + '.jpg');
+          var file = parentFolder.createFile(blob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          imageLinks.push(file.getUrl());
+        }
+      }
+      
+      var imgText = imageLinks.length > 0 ? imageLinks.join(' \n ') : 'لا يوجد';
+      os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes, imgText]);
     } else if (d.type === 'data') {
       var ds = ss.getSheetByName('Data') || ss.insertSheet('Data');
       ds.getRange('A1').setValue(JSON.stringify(d.payload));
@@ -372,6 +397,8 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({status:'success'})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
     return ContentService.createTextOutput(JSON.stringify({status:'error', message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    if(lock.hasLock()) lock.releaseLock();
   }
 }</pre>
 <button onclick="navigator.clipboard.writeText(document.querySelector('#tc-set pre').textContent).then(function(){toast(t('tCopied'),'ok')})" style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:.78rem;color:var(--fg);"><i class="fas fa-copy"></i> نسخ</button>
@@ -532,6 +559,65 @@ function togCart(){document.getElementById('cartOv').classList.toggle('o');docum
 function openCK(){togCart();document.getElementById('ckMo').classList.add('o');let total=0;D.cart.forEach(c=>total+=c.price*c.q);document.getElementById('ordSum').innerHTML=D.cart.map(c=>`<div>${c.name} × ${c.q}</div>`).join('');document.getElementById('ordTot').textContent=`${total} ${t('cur')}`;}
 function clCK(){document.getElementById('ckMo').classList.remove('o');}
 
+let customImages = [];
+
+function handleImageUpload(input) {
+    let files = input.files;
+    if (!files) return;
+    
+    if (customImages.length + files.length > 10) {
+        toast('بحد أقصى 10 صور', 'er');
+        return;
+    }
+    
+    let promises = [];
+    for (let i = 0; i < files.length; i++) {
+        promises.push(resizeImage(files[i], 800, 0.7));
+    }
+    
+    Promise.all(promises).then(results => {
+        customImages = customImages.concat(results);
+        document.getElementById('imgCount').textContent = customImages.length + " صور مرفوعة";
+        toast('تم رفع الصور بنجاح', 'ok');
+    }).catch(err => {
+        toast('خطأ في رفع الصور', 'er');
+    });
+}
+
+function resizeImage(file, maxSize, quality) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            let img = new Image();
+            img.onload = () => {
+                let canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > height) {
+                    if (width > maxSize) {
+                        height *= maxSize / width;
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width *= maxSize / height;
+                        height = maxSize;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 function subOrder(e){
     e.preventDefault();let name=document.getElementById('xName').value,phone=document.getElementById('xPhone').value,addr=document.getElementById('xAddr').value,notes=document.getElementById('xNotes').value;
     if(!name||!phone||!addr)return toast(t('tFillReq'),'er');
@@ -539,11 +625,16 @@ function subOrder(e){
     let orderData = {id:Date.now(),date:new Date().toLocaleString('ar-EG'),name,phone,addr,notes,items:D.cart.map(c=>({name:c.name,q:c.q,price:c.price})),total,status:'جديد'};
     
     D.orders.unshift(orderData);
-    saveD();D.cart=[];saveD();renderCart();clCK();document.getElementById('ckForm').reset();toast(t('tOrdOK'),'ok');
+    saveD();D.cart=[];saveD();renderCart();
+    
+    document.getElementById('imgCount').textContent = "";
+    document.getElementById('imgBtnText').textContent = "رفع الصور";
+    
+    clCK();document.getElementById('ckForm').reset();toast(t('tOrdOK'),'ok');
     
     if(D.gsUrl){
         let itemsText = orderData.items.map(it => `${it.q} ${it.name}`).join('\n');
-        let payload = {type: 'order', name: name, phone: phone, address: addr, items: itemsText, total: total, notes: notes};
+        let payload = {type: 'order', name: name, phone: phone, address: addr, items: itemsText, total: total, notes: notes, images: customImages};
         fetch(D.gsUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -551,6 +642,8 @@ function subOrder(e){
             body: JSON.stringify(payload)
         }).catch(err => console.log("Sheet Error", err));
     }
+    
+    customImages = [];
 }
 
 function sr(id){document.getElementById(id).scrollIntoView({behavior:'smooth'});}
@@ -591,16 +684,21 @@ function renderAdmin(){
     if(D.gsUrl) document.getElementById('gsQuick').value=D.gsUrl;
 }
 
+let syncTimer;
 function syncToSheet(){
     if(!D.gsUrl) return;
-    let p = {hero:D.hero, prods:D.prods, soc:D.soc, set:D.set, lang:D.lang, theme:D.theme, pw:D.pw};
-    let payload = {type:'data', payload:p};
-    fetch(D.gsUrl, {
-        method:'POST',
-        mode: 'no-cors',
-        headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify(payload)
-    }).catch(()=>{});
+    
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function() {
+        let p = {hero:D.hero, prods:D.prods, soc:D.soc, set:D.set, lang:D.lang, theme:D.theme, pw:D.pw};
+        let payload = {type:'data', payload:p};
+        fetch(D.gsUrl, {
+            method:'POST',
+            mode: 'no-cors',
+            headers:{'Content-Type':'text/plain;charset=utf-8'},
+            body: JSON.stringify(payload)
+        }).catch(()=>{});
+    }, 2000); // تأخير ثانيتين لمنع التضارب عند الحفظ السريع
 }
 
 function saveHero(){
