@@ -531,16 +531,14 @@ function subOrder(e){
     D.orders.unshift(orderData);
     saveD();D.cart=[];saveD();renderCart();clCK();document.getElementById('ckForm').reset();toast(t('tOrdOK'),'ok');
     
-    // إرسال للشيت
     if(D.gsUrl){
-        // تنسيق المنتجات لتكون نص واضح بدلاً من JSON
         let itemsText = orderData.items.map(it => `${it.q} ${it.name}`).join('\n');
-        
+        let payload = {type: 'order', name: name, phone: phone, address: addr, items: itemsText, total: total, notes: notes};
         fetch(D.gsUrl, {
             method: 'POST',
             mode: 'no-cors',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({type: 'order', name: name, phone: phone, address: addr, items: itemsText, total: total, notes: notes})
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
         }).catch(err => console.log("Sheet Error", err));
     }
 }
@@ -586,7 +584,13 @@ function renderAdmin(){
 function syncToSheet(){
     if(!D.gsUrl) return;
     let p = {hero:D.hero, prods:D.prods, soc:D.soc, set:D.set, lang:D.lang, theme:D.theme, pw:D.pw};
-    fetch(D.gsUrl, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'data',payload:p})}).catch(()=>{});
+    let payload = {type:'data', payload:p};
+    fetch(D.gsUrl, {
+        method:'POST',
+        mode: 'no-cors',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
+    }).catch(()=>{});
 }
 
 function saveHero(){
