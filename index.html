@@ -366,15 +366,15 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   try {
     lock.tryLock(30000);
-    var d = JSON.parse(e.postData.contents);
+    var rawData = e.parameter.payload || (e.postData ? e.postData.contents : '');
+    if(!rawData) throw new Error("No data received");
+    var d = JSON.parse(rawData);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
     if (d.type === 'order') {
       var os = ss.getSheetByName('Orders') || ss.insertSheet('Orders');
       if(os.getLastRow() === 0){
-        os.appendRow(["التاريخ", "الاسم", "رقم الهاتف", "العنوان", "المنتجات", "الإجمالي", "ملاحظات", "رابط الصور"]);
+        os.appendRow(["Date", "Name", "Phone", "Address", "Products", "Total", "Notes", "Images"]);
       }
-      
       var imageLinks = [];
       if (d.images && d.images.length > 0) {
         var parentFolder = DriveApp.getFileById(ss.getId()).getParentFolders().next();
@@ -387,8 +387,7 @@ function doPost(e) {
           imageLinks.push(file.getUrl());
         }
       }
-      
-      var imgText = imageLinks.length > 0 ? imageLinks.join(' \n ') : 'لا يوجد';
+      var imgText = imageLinks.length > 0 ? imageLinks.join(' \n ') : 'None';
       os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes, imgText]);
     } else if (d.type === 'data') {
       var ds = ss.getSheetByName('Data') || ss.insertSheet('Data');
@@ -396,6 +395,9 @@ function doPost(e) {
     }
     return ContentService.createTextOutput(JSON.stringify({status:'success'})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName('Logs') || ss.insertSheet('Logs');
+    logSheet.appendRow([new Date(), err.toString()]);
     return ContentService.createTextOutput(JSON.stringify({status:'error', message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
   } finally {
     if(lock.hasLock()) lock.releaseLock();
@@ -431,7 +433,6 @@ function t(k){return T[D.lang][k]||k;}
 
 async function init(){
     loadD();
-    
     if(D.gsUrl){
         try {
             let r = await fetch(D.gsUrl);
@@ -450,7 +451,6 @@ async function init(){
             }
         } catch(e){}
     }
-
     setLang(D.lang,true);
     applyTheme(D.theme,true);
     renderHero();
@@ -460,7 +460,6 @@ async function init(){
     renderFooter();
     renderCart();
     renderAdmin();
-    
     let logoClicks=0, logoTimer;
     document.getElementById('logoArea').addEventListener('click', function(){
         logoClicks++;
@@ -468,7 +467,6 @@ async function init(){
         logoTimer = setTimeout(()=>{ logoClicks=0; }, 800);
         if(logoClicks >= 5){ logoClicks=0; togAdmin(); }
     });
-
     setTimeout(()=>{document.getElementById('pld').classList.add('h');},500);
     window.addEventListener('scroll',()=>{document.getElementById('hdr').classList.toggle('scrolled',window.scrollY>20);reveal();});
     reveal();
@@ -564,17 +562,14 @@ let customImages = [];
 function handleImageUpload(input) {
     let files = input.files;
     if (!files) return;
-    
     if (customImages.length + files.length > 10) {
         toast('بحد أقصى 10 صور', 'er');
         return;
     }
-    
     let promises = [];
     for (let i = 0; i < files.length; i++) {
         promises.push(resizeImage(files[i], 800, 0.7));
     }
-    
     Promise.all(promises).then(results => {
         customImages = customImages.concat(results);
         document.getElementById('imgCount').textContent = customImages.length + " صور مرفوعة";
@@ -593,7 +588,6 @@ function resizeImage(file, maxSize, quality) {
                 let canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-                
                 if (width > height) {
                     if (width > maxSize) {
                         height *= maxSize / width;
@@ -605,7 +599,6 @@ function resizeImage(file, maxSize, quality) {
                         height = maxSize;
                     }
                 }
-                
                 canvas.width = width;
                 canvas.height = height;
                 let ctx = canvas.getContext('2d');
@@ -623,26 +616,21 @@ function subOrder(e){
     if(!name||!phone||!addr)return toast(t('tFillReq'),'er');
     let total=0;D.cart.forEach(c=>total+=c.price*c.q);
     let orderData = {id:Date.now(),date:new Date().toLocaleString('ar-EG'),name,phone,addr,notes,items:D.cart.map(c=>({name:c.name,q:c.q,price:c.price})),total,status:'جديد'};
-    
     D.orders.unshift(orderData);
     saveD();D.cart=[];saveD();renderCart();
-    
     document.getElementById('imgCount').textContent = "";
     document.getElementById('imgBtnText').textContent = "رفع الصور";
-    
     clCK();document.getElementById('ckForm').reset();toast(t('tOrdOK'),'ok');
-    
     if(D.gsUrl){
         let itemsText = orderData.items.map(it => `${it.q} ${it.name}`).join('\n');
         let payload = {type: 'order', name: name, phone: phone, address: addr, items: itemsText, total: total, notes: notes, images: customImages};
         fetch(D.gsUrl, {
             method: 'POST',
             mode: 'no-cors',
-            headers: {'Content-Type': 'text/plain;charset=utf-8'},
-            body: JSON.stringify(payload)
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
         }).catch(err => console.log("Sheet Error", err));
     }
-    
     customImages = [];
 }
 
@@ -669,16 +657,12 @@ function swTab(tab,btn){document.querySelectorAll('.ati').forEach(b=>b.classList
 function renderAdmin(){
     if(!D.log)return;
     document.getElementById('thGrid').innerHTML=Object.keys(TH).map(k=>{let th=TH[k];let name=D.lang==='ar'?th.n_ar:th.n_en;return`<div class="tc ${D.theme===k?'act':''}" onclick="applyTheme('${k}')"><div class="tp">${th.c.map(c=>`<span style="background:${c}"></span>`).join('')}</div><div style="font-size:.82rem;font-weight:600;">${name}</div></div>`;}).join('');
-    
     let h=D.hero;
     document.getElementById('hImg').value=h.img;document.getElementById('hT1').value=h.t1;document.getElementById('hT2').value=h.t2;document.getElementById('hDesc').value=h.desc;document.getElementById('hBadge').value=h.badge;document.getElementById('fc1T').value=h.fc1t;document.getElementById('fc1D').value=h.fc1d;document.getElementById('fc2T').value=h.fc2t;document.getElementById('fc2D').value=h.fc2d;
     document.getElementById('hImgPrev').src=h.img||'';
-
     document.getElementById('tpCount').textContent=`${D.prods.length} ${t('pws')}`;
     document.getElementById('admPList').innerHTML=D.prods.map(p=>`<div class="apc"><img src="${p.img}" alt=""><div class="inf"><div class="nm">${p.name}</div><div class="mt">${p.price} ${t('cur')}</div></div><div class="act"><button class="ib" onclick="editProd(${p.id})"><i class="fas fa-pen"></i></button><button class="ib dg" onclick="delProd(${p.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
-
     if(!D.orders.length){document.getElementById('ordList').innerHTML=`<div class="es"><i class="fas fa-receipt block"></i>${t('tNoOrd')}</div>`;}else{document.getElementById('ordList').innerHTML=D.orders.map(o=>`<div class="oc"><div class="oh"><div class="on">${t('ordNum')}${o.id.toString().slice(-4)}</div><div class="od">${o.date}</div></div><div class="od2"><i class="fas fa-user"></i> ${o.name}</div><div class="od2"><i class="fas fa-phone"></i> ${o.phone}</div><div class="od2"><i class="fas fa-location-dot"></i> ${o.addr}</div><div style="margin-top:8px;font-weight:700;color:var(--accent-dark);">${o.total} ${t('cur')}</div></div>`).join('');}
-
     document.getElementById('sWA').value=D.soc.wa;document.getElementById('sFB').value=D.soc.fb;document.getElementById('sIG').value=D.soc.ig;document.getElementById('sTK').value=D.soc.tk;document.getElementById('sTW').value=D.soc.tw;document.getElementById('sUrl').value=D.soc.url;
     document.getElementById('setPh').value=D.set.ph;document.getElementById('setEm').value=D.set.em;document.getElementById('setAd').value=D.set.ad;document.getElementById('setCu').value=D.set.cu;
     if(D.gsUrl) document.getElementById('gsQuick').value=D.gsUrl;
@@ -687,7 +671,6 @@ function renderAdmin(){
 let syncTimer;
 function syncToSheet(){
     if(!D.gsUrl) return;
-    
     clearTimeout(syncTimer);
     syncTimer = setTimeout(function() {
         let p = {hero:D.hero, prods:D.prods, soc:D.soc, set:D.set, lang:D.lang, theme:D.theme, pw:D.pw};
@@ -695,10 +678,10 @@ function syncToSheet(){
         fetch(D.gsUrl, {
             method:'POST',
             mode: 'no-cors',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body: JSON.stringify(payload)
+            headers: {'Content-Type':'application/x-www-form-urlencoded'},
+            body: 'payload=' + encodeURIComponent(JSON.stringify(payload))
         }).catch(()=>{});
-    }, 2000); // تأخير ثانيتين لمنع التضارب عند الحفظ السريع
+    }, 2000);
 }
 
 function saveHero(){
