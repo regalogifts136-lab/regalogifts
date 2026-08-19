@@ -377,12 +377,13 @@ function doPost(e) {
       }
       var imageLinks = [];
       if (d.images && d.images.length > 0) {
-        var parentFolder = DriveApp.getFileById(ss.getId()).getParentFolders().next();
+        var folders = DriveApp.getFoldersByName('Regalo Order Images');
+        var folder = folders.hasNext() ? folders.next() : DriveApp.getRootFolder().createFolder('Regalo Order Images');
         for (var i = 0; i < d.images.length; i++) {
           var base64Data = d.images[i].split(',')[1];
           var decoded = Utilities.base64Decode(base64Data);
           var blob = Utilities.newBlob(decoded, 'image/jpeg', 'Order_' + Date.now() + '_' + i + '.jpg');
-          var file = parentFolder.createFile(blob);
+          var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           imageLinks.push(file.getUrl());
         }
