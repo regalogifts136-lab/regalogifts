@@ -356,52 +356,59 @@
 <div style="background:var(--bg);border-radius:12px;padding:14px;margin-bottom:16px;border:1px solid var(--border);">
 <div style="font-weight:600;font-size:.82rem;margin-bottom:8px;">كود Apps Script للشيت (النسخة المطورة برفع الصور):</div>
 <pre style="font-size:.68rem;color:var(--fg-light);line-height:1.7;direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;font-family:monospace;background:var(--fg);color:#E8D5C0;padding:12px;border-radius:8px;overflow-x:auto;">function doGet(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data');
-  if(!sheet) sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('Data');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Data') || ss.insertSheet('Data');
   var data = sheet.getRange('A1').getValue();
   return ContentService.createTextOutput(data || '{}').setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
-  var lock = LockService.getScriptLock();
   try {
-    lock.tryLock(30000);
-    var rawData = e.parameter.payload || (e.postData ? e.postData.contents : '');
-    if(!rawData) throw new Error("No data received");
-    var d = JSON.parse(rawData);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return ContentService.createTextOutput('Error: No Active Spreadsheet').setMimeType(ContentService.MimeType.TEXT);
+    
+    var rawData = e.parameter.payload || (e.postData ? e.postData.contents : '');
+    if (rawData.indexOf('payload=') === 0) {
+      rawData = decodeURIComponent(rawData.substring(8));
+    }
+    
+    if(!rawData) return ContentService.createTextOutput('Error: No Data').setMimeType(ContentService.MimeType.TEXT);
+    
+    var d = JSON.parse(rawData);
+    
     if (d.type === 'order') {
       var os = ss.getSheetByName('Orders') || ss.insertSheet('Orders');
       if(os.getLastRow() === 0){
         os.appendRow(["Date", "Name", "Phone", "Address", "Products", "Total", "Notes", "Images"]);
       }
+      
       var imageLinks = [];
       if (d.images && d.images.length > 0) {
         var folders = DriveApp.getFoldersByName('Regalo Order Images');
         var folder = folders.hasNext() ? folders.next() : DriveApp.getRootFolder().createFolder('Regalo Order Images');
+        
         for (var i = 0; i < d.images.length; i++) {
           var base64Data = d.images[i].split(',')[1];
           var decoded = Utilities.base64Decode(base64Data);
-          var blob = Utilities.newBlob(decoded, 'image/jpeg', 'Order_' + Date.now() + '_' + i + '.jpg');
+          var blob = Utilities.newBlob(decoded, 'image/jpeg', 'Order_' + new Date().getTime() + '_' + i + '.jpg');
           var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           imageLinks.push(file.getUrl());
         }
       }
+      
       var imgText = imageLinks.length > 0 ? imageLinks.join(' \n ') : 'None';
       os.appendRow([new Date(), d.name, d.phone, d.address, d.items, d.total, d.notes, imgText]);
+      
     } else if (d.type === 'data') {
       var ds = ss.getSheetByName('Data') || ss.insertSheet('Data');
       ds.getRange('A1').setValue(JSON.stringify(d.payload));
     }
     return ContentService.createTextOutput(JSON.stringify({status:'success'})).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
     var logSheet = ss.getSheetByName('Logs') || ss.insertSheet('Logs');
-    logSheet.appendRow([new Date(), err.toString()]);
+    logSheet.appendRow([new Date(), err.toString(), (e.postData ? e.postData.contents : 'No postData')]);
     return ContentService.createTextOutput(JSON.stringify({status:'error', message: err.toString()})).setMimeType(ContentService.MimeType.JSON);
-  } finally {
-    if(lock.hasLock()) lock.releaseLock();
   }
 }</pre>
 <button onclick="navigator.clipboard.writeText(document.querySelector('#tc-set pre').textContent).then(function(){toast(t('tCopied'),'ok')})" style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:.78rem;color:var(--fg);"><i class="fas fa-copy"></i> نسخ</button>
